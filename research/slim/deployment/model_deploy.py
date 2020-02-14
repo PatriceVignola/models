@@ -103,6 +103,7 @@ import collections
 
 import tensorflow as tf
 from tensorflow.contrib import slim as contrib_slim
+from tensorflow.python.client import device_lib
 
 slim = contrib_slim
 
@@ -194,6 +195,19 @@ def create_clones(config, model_fn, args=None, kwargs=None):
             outputs = model_fn(*args, **kwargs)
           clones.append(Clone(outputs, clone_scope, clone_device))
   return clones
+
+
+def _get_device(clone_on_cpu):
+  if clone_on_cpu:
+    return '/device:CPU:0'
+  else:
+    local_devices = device_lib.list_local_devices()
+    devices = [x for x in local_devices if x.device_type != 'CPU']
+
+    if devices:
+      return devices[0]
+    else:
+      raise Exception('clone_on_cpu was false, but no other device was found')
 
 
 def _gather_clone_loss(clone, num_clones, regularization_losses):
@@ -592,10 +606,10 @@ class DeploymentConfig(object):
     device = ''
     if self._num_ps_tasks > 0:
       device += self._worker_device
-    if self._clone_on_cpu:
-      device += '/device:CPU:0'
-    else:
-      device += '/device:GPU:%d' % clone_index
+
+    device_type = _get_device(self._clone_on_cpu).device_type
+    device += '/device:%s:%d' % (device_type, clone_index)
+
     return device
 
   def clone_scope(self, clone_index):
@@ -624,7 +638,9 @@ class DeploymentConfig(object):
       A value suitable for `tf.device()`.
     """
     if self._num_ps_tasks > 0 or self._num_clones > 0:
-      return self._worker_device + '/device:CPU:0'
+      device = self._worker_device
+      device += _get_device(self._clone_on_cpu).name
+      return device
     else:
       return ''
 
@@ -649,7 +665,8 @@ class DeploymentConfig(object):
     device = ''
     if self._num_ps_tasks > 0:
       device += self._ps_device
-    device += '/device:CPU:0'
+
+    device += _get_device(self._clone_on_cpu).name
 
     class _PSDeviceChooser(object):
       """Slim device chooser for variables when using PS."""
