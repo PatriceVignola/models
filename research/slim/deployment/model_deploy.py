@@ -190,8 +190,8 @@ def create_clones(config, model_fn, args=None, kwargs=None):
       with tf.name_scope(config.clone_scope(i)) as clone_scope:
         clone_device = config.clone_device(i)
         with tf.device(clone_device):
-          with tf.variable_scope(tf.get_variable_scope(),
-                                 reuse=True if i > 0 else None):
+          with tf.compat.v1.variable_scope(tf.compat.v1.get_variable_scope(),
+                                           reuse=True if i > 0 else None):
             outputs = model_fn(*args, **kwargs)
           clones.append(Clone(outputs, clone_scope, clone_device))
   return clones
@@ -230,7 +230,8 @@ def _gather_clone_loss(clone, num_clones, regularization_losses):
   # Compute and aggregate losses on the clone device.
   with tf.device(clone.device):
     all_losses = []
-    clone_losses = tf.get_collection(tf.GraphKeys.LOSSES, clone.scope)
+    clone_losses = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.LOSSES,
+                                               clone.scope)
     if clone_losses:
       clone_loss = tf.add_n(clone_losses, name='clone_loss')
       if num_clones > 1:
@@ -245,11 +246,12 @@ def _gather_clone_loss(clone, num_clones, regularization_losses):
       sum_loss = tf.add_n(all_losses)
   # Add the summaries out of the clone device block.
   if clone_loss is not None:
-    tf.summary.scalar('/'.join(filter(None,
-                                      ['Losses', clone.scope, 'clone_loss'])),
+    tf.compat.v1.summary.scalar('/'.join(filter(None,
+                                  ['Losses', clone.scope, 'clone_loss'])),
                       clone_loss)
   if regularization_loss is not None:
-    tf.summary.scalar('Losses/regularization_loss', regularization_loss)
+    tf.compat.v1.summary.scalar('Losses/regularization_loss',
+                                regularization_loss)
   return sum_loss
 
 
@@ -306,8 +308,8 @@ def optimize_clones(clones, optimizer,
   clones_losses = []
   num_clones = len(clones)
   if regularization_losses is None:
-    regularization_losses = tf.get_collection(
-        tf.GraphKeys.REGULARIZATION_LOSSES)
+    regularization_losses = tf.compat.v1.get_collection(
+        tf.compat.v1.GraphKeys.REGULARIZATION_LOSSES)
   for clone in clones:
     with tf.name_scope(clone.scope):
       clone_loss, clone_grad = _optimize_clone(
@@ -361,7 +363,7 @@ def deploy(config,
 
   """
   # Gather initial summaries.
-  summaries = set(tf.get_collection(tf.GraphKeys.SUMMARIES))
+  summaries = set(tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.SUMMARIES))
 
   # Create Clones.
   clones = create_clones(config, model_fn, args, kwargs)
@@ -369,7 +371,8 @@ def deploy(config,
 
   # Gather update_ops from the first clone. These contain, for example,
   # the updates for the batch_norm variables created by model_fn.
-  update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, first_clone.scope)
+  update_ops = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.UPDATE_OPS,
+                                           first_clone.scope)
 
   train_op = None
   total_loss = None
@@ -377,7 +380,7 @@ def deploy(config,
     if optimizer:
       # Place the global step on the device storing the variables.
       with tf.device(config.variables_device()):
-        global_step = slim.get_or_create_global_step()
+        global_step = tf.compat.v1.train.get_or_create_global_step()
 
       # Compute the gradients for the clones.
       total_loss, clones_gradients = optimize_clones(clones, optimizer)
@@ -412,16 +415,17 @@ def deploy(config,
 
     # Add the summaries from the first clone. These contain the summaries
     # created by model_fn and either optimize_clones() or _gather_clone_loss().
-    summaries |= set(tf.get_collection(tf.GraphKeys.SUMMARIES,
-                                       first_clone.scope))
+    summaries |= set(tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.SUMMARIES,
+                                                 first_clone.scope))
 
     if total_loss is not None:
       # Add total_loss to summary.
-      summaries.add(tf.summary.scalar('total_loss', total_loss))
+      summaries.add(tf.compat.v1.summary.scalar('total_loss', total_loss))
 
     if summaries:
       # Merge all summaries together.
-      summary_op = tf.summary.merge(list(summaries), name='summary_op')
+      summary_op = tf.compat.v1.summary.merge(list(summaries),
+                                              name='summary_op')
     else:
       summary_op = None
 
