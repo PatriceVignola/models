@@ -198,10 +198,11 @@ def create_clones(config, model_fn, args=None, kwargs=None):
 
 
 def _get_device(clone_on_cpu):
+  local_devices = device_lib.list_local_devices()
+
   if clone_on_cpu:
-    return '/device:CPU:0'
+    return [x for x in local_devices if x.device_type == 'CPU'][0]
   else:
-    local_devices = device_lib.list_local_devices()
     devices = [x for x in local_devices if x.device_type != 'CPU']
 
     if devices:
